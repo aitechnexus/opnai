@@ -15,7 +15,7 @@ ttk: Any | None = None
 filedialog: Any | None = None
 messagebox: Any | None = None
 
-from organizer import DEFAULT_ROOT_NAME, Organizer
+from .core import DEFAULT_ROOT_NAME, Organizer
 
 
 def _ensure_tk() -> None:
