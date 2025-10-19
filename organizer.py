@@ -234,6 +234,7 @@ class FilePlan:
     category: str
     theme: Optional[str]
     is_duplicate: bool = False
+    duplicate_of: Optional[Path] = None
 
 
 @dataclasses.dataclass
@@ -257,6 +258,7 @@ class PlanReport:
                     "category": plan.category,
                     "theme": plan.theme,
                     "duplicate": plan.is_duplicate,
+                    "duplicate_of": str(plan.duplicate_of) if plan.duplicate_of else None,
                 }
                 for plan in self.files
             ],
@@ -278,16 +280,26 @@ CRITICAL_TARGETS = {
 
 
 class Organizer:
-    def __init__(self, target: Path, apply_changes: bool, dry_run: bool, root_name: str = DEFAULT_ROOT_NAME) -> None:
+    def __init__(
+        self,
+        target: Path,
+        apply_changes: bool,
+        dry_run: bool,
+        *,
+        remove_duplicates: bool = False,
+        root_name: str = DEFAULT_ROOT_NAME,
+    ) -> None:
         self.target = target.expanduser().resolve()
         self.apply_changes = apply_changes
         self.dry_run = dry_run
+        self.remove_duplicates = remove_duplicates
         self.organized_root = self.target / root_name
         self._protected_dirs = set(PROTECTED_DIR_NAMES)
         home = Path.home()
         if self.target == home:
             self._protected_dirs.update({"Applications", "Library", ".ssh", ".config"})
         self._skip_hidden = True
+        self._duplicates_root = self.organized_root / "Duplicates"
 
     def run(self) -> PlanReport:
         if not self.target.exists() or not self.target.is_dir():
@@ -307,6 +319,7 @@ class Organizer:
 
     def _build_plan(self) -> Iterator[FilePlan]:
         hash_index: Dict[str, Path] = {}
+        name_counters: Dict[Path, int] = defaultdict(int)
         for path in walk_files(
             self.target,
             protected_dir_names=self._protected_dirs,
@@ -321,12 +334,25 @@ class Organizer:
             destination = self._destination_for(path, category)
             file_hash = self._hash_file(path)
             is_duplicate = False
+            duplicate_of = None
             if file_hash in hash_index:
-                destination = hash_index[file_hash]
+                duplicate_of = hash_index[file_hash]
                 is_duplicate = True
+                if self.remove_duplicates:
+                    destination = self._unique_duplicate_destination(path.name, name_counters)
+                    category = "Duplicates"
+                else:
+                    destination = duplicate_of
             else:
                 hash_index[file_hash] = destination
-            yield FilePlan(source=path, destination=destination, category=category, theme=theme, is_duplicate=is_duplicate)
+            yield FilePlan(
+                source=path,
+                destination=destination,
+                category=category,
+                theme=theme,
+                is_duplicate=is_duplicate,
+                duplicate_of=duplicate_of,
+            )
 
     def _is_critical_target(self) -> bool:
         return any(self.target == path or path in self.target.parents for path in CRITICAL_TARGETS)
@@ -354,7 +380,13 @@ class Organizer:
         print("Applying plan ...")
         for item in plan:
             if item.is_duplicate:
-                print(f"Skipping duplicate: {item.source} -> {item.destination}")
+                if self.remove_duplicates:
+                    destination_dir = item.destination.parent
+                    destination_dir.mkdir(parents=True, exist_ok=True)
+                    print(f"Relocating duplicate to {item.destination}: {item.source}")
+                    shutil.move(str(item.source), str(item.destination))
+                else:
+                    print(f"Skipping duplicate: {item.source} matches {item.duplicate_of}")
                 continue
             destination_dir = item.destination.parent
             destination_dir.mkdir(parents=True, exist_ok=True)
@@ -377,6 +409,23 @@ class Organizer:
         print("\nSummary:")
         for category, count in report.summary().items():
             print(f"  {category}: {count}")
+
+    def _unique_duplicate_destination(self, filename: str, name_counters: MutableMapping[Path, int]) -> Path:
+        base = self._duplicates_root / filename
+        stem = base.stem
+        suffix = base.suffix
+        counter = name_counters[base]
+        destination: Path
+        if counter == 0 and not base.exists():
+            destination = base
+        else:
+            counter = counter + 1 if counter else 1
+            destination = self._duplicates_root / f"{stem}_{counter}{suffix}"
+            while destination.exists():
+                counter += 1
+                destination = self._duplicates_root / f"{stem}_{counter}{suffix}"
+        name_counters[base] = counter
+        return destination
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -402,12 +451,23 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Print the plan as JSON after the summary.",
     )
+    parser.add_argument(
+        "--remove-duplicates",
+        action="store_true",
+        help="Move duplicate files into an Organized/Duplicates folder instead of leaving them in place.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
-    organizer = Organizer(args.target, apply_changes=args.apply, dry_run=args.dry_run, root_name=args.root_name)
+    organizer = Organizer(
+        args.target,
+        apply_changes=args.apply,
+        dry_run=args.dry_run,
+        remove_duplicates=args.remove_duplicates,
+        root_name=args.root_name,
+    )
     try:
         report = organizer.run()
     except ValueError as exc:

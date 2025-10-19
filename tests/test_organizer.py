@@ -59,12 +59,14 @@ def test_plan_report_json(tmp_path: Path):
                 destination=tmp_path / "Organized/Documents/a.txt",
                 category="Documents",
                 theme=None,
+                duplicate_of=None,
             )
         ],
     )
     payload = json.loads(plan.to_json())
     assert payload["root"] == str(tmp_path)
     assert payload["files"][0]["source"].endswith("a.txt")
+    assert payload["files"][0]["duplicate_of"] is None
 
 
 def test_home_directory_protection(tmp_path: Path, monkeypatch):
@@ -91,3 +93,31 @@ def test_refuses_system_target(tmp_path: Path):
     org = organizer.Organizer(Path("/System"), apply_changes=False, dry_run=True)
     with pytest.raises(ValueError):
         org.run()
+
+
+def test_duplicate_removal_moves_to_duplicates(tmp_path: Path):
+    original = tmp_path / "report.pdf"
+    duplicate = tmp_path / "copy.pdf"
+    original.write_bytes(b"sample")
+    duplicate.write_bytes(b"sample")
+
+    org = organizer.Organizer(
+        tmp_path,
+        apply_changes=True,
+        dry_run=False,
+        remove_duplicates=True,
+    )
+
+    plan = list(org._build_plan())
+    duplicates = [item for item in plan if item.is_duplicate]
+    assert len(duplicates) == 1
+    assert duplicates[0].category == "Duplicates"
+    assert duplicates[0].duplicate_of is not None
+
+    org._apply(plan)
+
+    duplicates_dir = tmp_path / "Organized" / "Duplicates"
+    moved = list(duplicates_dir.glob("copy*.pdf"))
+    assert moved, "Duplicate file should be moved into Organized/Duplicates"
+    assert moved[0].read_bytes() == b"sample"
+    assert not duplicate.exists()
