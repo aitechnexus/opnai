@@ -6,6 +6,7 @@ import importlib
 import importlib.util
 import io
 import queue
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,12 @@ tk: Any | None = None
 ttk: Any | None = None
 filedialog: Any | None = None
 messagebox: Any | None = None
+
+_TKINTER_MISSING_MESSAGE = (
+    "Tkinter is not available in this Python build. Install a Python distribution "
+    "with Tk support (for example, `brew install python-tk` or the official "
+    "python.org installer on macOS) to launch the GUI."
+)
 
 from .core import DEFAULT_ROOT_NAME, Organizer
 
@@ -25,11 +32,19 @@ def _ensure_tk() -> None:
     if tk is not None:
         return
     if importlib.util.find_spec("tkinter") is None:
-        raise RuntimeError("Tkinter is not available on this system. Install tkinter to use the GUI.")
-    tk_module = importlib.import_module("tkinter")
-    ttk_module = importlib.import_module("tkinter.ttk")
-    filedialog_module = importlib.import_module("tkinter.filedialog")
-    messagebox_module = importlib.import_module("tkinter.messagebox")
+        raise RuntimeError(_TKINTER_MISSING_MESSAGE)
+
+    try:
+        tk_module = importlib.import_module("tkinter")
+        ttk_module = importlib.import_module("tkinter.ttk")
+        filedialog_module = importlib.import_module("tkinter.filedialog")
+        messagebox_module = importlib.import_module("tkinter.messagebox")
+    except ModuleNotFoundError as exc:  # pragma: no cover - exercised via tests with monkeypatch
+        if getattr(exc, "name", None) == "_tkinter" or "_tkinter" in str(exc):
+            raise RuntimeError(_TKINTER_MISSING_MESSAGE) from exc
+        raise
+    except ImportError as exc:  # pragma: no cover - defensive
+        raise RuntimeError(_TKINTER_MISSING_MESSAGE) from exc
     tk = tk_module
     ttk = ttk_module
     filedialog = filedialog_module
@@ -193,14 +208,20 @@ class OrganizerApp:
             self.root.after(100, self._poll_events)
 
 
-def launch() -> None:
+def launch() -> int:
     """Launch the graphical organizer application."""
 
-    _ensure_tk()
+    try:
+        _ensure_tk()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     assert tk is not None  # For type checkers
     root = tk.Tk()
     OrganizerApp(root)
     root.mainloop()
+    return 0
 
 
 __all__ = ["launch", "OrganizerApp"]

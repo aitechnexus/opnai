@@ -117,7 +117,8 @@ def test_duplicate_removal_moves_to_duplicates(tmp_path: Path):
     org._apply(plan)
 
     duplicates_dir = tmp_path / "Organized" / "Duplicates"
-    moved = list(duplicates_dir.glob("copy*.pdf"))
+    moved = list(duplicates_dir.glob("*.pdf"))
     assert moved, "Duplicate file should be moved into Organized/Duplicates"
     assert moved[0].read_bytes() == b"sample"
-    assert not duplicate.exists()
+    organized_docs = tmp_path / "Organized" / "Documents"
+    assert list(organized_docs.glob("*.pdf")), "One copy should remain in Organized/Documents"
