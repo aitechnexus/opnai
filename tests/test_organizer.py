@@ -2,6 +2,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
@@ -63,3 +65,29 @@ def test_plan_report_json(tmp_path: Path):
     payload = json.loads(plan.to_json())
     assert payload["root"] == str(tmp_path)
     assert payload["files"][0]["source"].endswith("a.txt")
+
+
+def test_home_directory_protection(tmp_path: Path, monkeypatch):
+    target = tmp_path
+    (target / "Library").mkdir()
+    (target / "Library" / "prefs.plist").write_text("prefs", encoding="utf-8")
+    (target / ".ssh").mkdir()
+    (target / ".ssh" / "id_rsa").write_text("key", encoding="utf-8")
+    docs = target / "Documents"
+    docs.mkdir()
+    safe_file = docs / "notes.txt"
+    safe_file.write_text("meeting minutes", encoding="utf-8")
+
+    monkeypatch.setattr(organizer.Path, "home", classmethod(lambda cls: target))
+    org = organizer.Organizer(target, apply_changes=False, dry_run=True)
+    plans = list(org._build_plan())
+    sources = {plan.source for plan in plans}
+    assert safe_file in sources
+    assert target / "Library" / "prefs.plist" not in sources
+    assert target / ".ssh" / "id_rsa" not in sources
+
+
+def test_refuses_system_target(tmp_path: Path):
+    org = organizer.Organizer(Path("/System"), apply_changes=False, dry_run=True)
+    with pytest.raises(ValueError):
+        org.run()

@@ -113,10 +113,45 @@ EXTENSION_MAP: Mapping[str, str] = {
 DEFAULT_CATEGORY = "Others"
 
 
-def walk_files(root: Path) -> Iterator[Path]:
-    for dirpath, _, filenames in os.walk(root):
+PROTECTED_DIR_NAMES = {
+    "Applications",
+    "Library",
+    "System",
+    "bin",
+    "sbin",
+    "usr",
+    "etc",
+    "var",
+    "opt",
+    "Volumes",
+}
+
+
+def walk_files(
+    root: Path,
+    *,
+    protected_dir_names: Iterable[str] = (),
+    skip_hidden: bool = False,
+    exclude: Optional[Path] = None,
+) -> Iterator[Path]:
+    protected = {name for name in protected_dir_names}
+    for dirpath, dirnames, filenames in os.walk(root):
+        current_dir = Path(dirpath)
+        if exclude and (current_dir == exclude or exclude in current_dir.parents):
+            dirnames[:] = []
+            continue
+        filtered_dirs = []
+        for dirname in dirnames:
+            if skip_hidden and dirname.startswith("."):
+                continue
+            if dirname in protected:
+                continue
+            filtered_dirs.append(dirname)
+        dirnames[:] = filtered_dirs
         for name in filenames:
-            yield Path(dirpath) / name
+            if skip_hidden and name.startswith("."):
+                continue
+            yield current_dir / name
 
 
 def guess_category(path: Path, text_profile: Optional[Counter[str]]) -> Tuple[str, Optional[str]]:
@@ -229,16 +264,36 @@ class PlanReport:
         return json.dumps(serializable, indent=2)
 
 
+CRITICAL_TARGETS = {
+    Path("/"),
+    Path("/System"),
+    Path("/Applications"),
+    Path("/Library"),
+    Path("/bin"),
+    Path("/usr"),
+    Path("/sbin"),
+    Path("/etc"),
+    Path("/var"),
+}
+
+
 class Organizer:
     def __init__(self, target: Path, apply_changes: bool, dry_run: bool, root_name: str = DEFAULT_ROOT_NAME) -> None:
         self.target = target.expanduser().resolve()
         self.apply_changes = apply_changes
         self.dry_run = dry_run
         self.organized_root = self.target / root_name
+        self._protected_dirs = set(PROTECTED_DIR_NAMES)
+        home = Path.home()
+        if self.target == home:
+            self._protected_dirs.update({"Applications", "Library", ".ssh", ".config"})
+        self._skip_hidden = True
 
     def run(self) -> PlanReport:
         if not self.target.exists() or not self.target.is_dir():
             raise ValueError(f"Target {self.target} does not exist or is not a directory")
+        if self._is_critical_target():
+            raise ValueError(f"Refusing to organize critical system directory: {self.target}")
 
         print(f"Scanning {self.target} ...")
         plan = list(self._build_plan())
@@ -252,7 +307,12 @@ class Organizer:
 
     def _build_plan(self) -> Iterator[FilePlan]:
         hash_index: Dict[str, Path] = {}
-        for path in walk_files(self.target):
+        for path in walk_files(
+            self.target,
+            protected_dir_names=self._protected_dirs,
+            skip_hidden=self._skip_hidden,
+            exclude=self.organized_root,
+        ):
             if self.organized_root in path.parents:
                 continue
             mime, _ = mimetypes.guess_type(str(path))
@@ -267,6 +327,9 @@ class Organizer:
             else:
                 hash_index[file_hash] = destination
             yield FilePlan(source=path, destination=destination, category=category, theme=theme, is_duplicate=is_duplicate)
+
+    def _is_critical_target(self) -> bool:
+        return any(self.target == path or path in self.target.parents for path in CRITICAL_TARGETS)
 
     def _destination_for(self, path: Path, category: str) -> Path:
         if category.startswith("Images"):
