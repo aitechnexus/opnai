@@ -9,13 +9,3 @@ for _name in dir(_core):
 del _name
 
 __all__ = [name for name in globals() if not name.startswith("__")]
-
-
-def _run() -> int:
-    """Invoke :func:`mac_organizer.core.main` for script execution."""
-
-    return _core.main()
-
-
-if __name__ == "__main__":
-    raise SystemExit(_run())

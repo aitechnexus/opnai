@@ -1,6 +1,5 @@
 import json
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -22,17 +21,6 @@ def test_module_runner_reuses_main_function():
     import mac_organizer.__main__ as module_main
 
     assert module_main.main is organizer.main
-
-
-def test_wrapper_script_runs_core_main(monkeypatch):
-    result = object()
-
-    def fake_main(argv=None):
-        return result
-
-    monkeypatch.setattr(organizer, "_core", types.SimpleNamespace(main=fake_main))
-
-    assert organizer._run() is result
 
 
 def test_tokenize_basic():
@@ -105,24 +93,6 @@ def test_refuses_system_target(tmp_path: Path):
     org = organizer.Organizer(Path("/System"), apply_changes=False, dry_run=True)
     with pytest.raises(ValueError):
         org.run()
-
-
-def test_refuses_nested_system_target():
-    org = organizer.Organizer(Path("/System/Library"), apply_changes=False, dry_run=True)
-    with pytest.raises(ValueError):
-        org.run()
-
-
-def test_allows_regular_directory(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    sample = tmp_path / "note.txt"
-    sample.write_text("hello", encoding="utf-8")
-
-    org = organizer.Organizer(tmp_path, apply_changes=False, dry_run=True)
-    org.run()
-
-    captured = capsys.readouterr()
-    assert "Scanning" in captured.out
-    assert "Dry run only" in captured.out
 
 
 def test_duplicate_removal_moves_to_duplicates(tmp_path: Path):

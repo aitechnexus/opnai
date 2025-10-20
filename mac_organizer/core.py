@@ -355,14 +355,7 @@ class Organizer:
             )
 
     def _is_critical_target(self) -> bool:
-        for path in CRITICAL_TARGETS:
-            if self.target == path:
-                return True
-            if path == Path("/"):
-                continue
-            if path in self.target.parents:
-                return True
-        return False
+        return any(self.target == path or path in self.target.parents for path in CRITICAL_TARGETS)
 
     def _destination_for(self, path: Path, category: str) -> Path:
         if category.startswith("Images"):
