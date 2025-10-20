@@ -90,6 +90,33 @@ make test
 make clean
 ```
 
+### Automating your Git workflow
+
+If you are tired of manually updating branches, committing, pushing, and creating
+pull requests, the Makefile also bundles a few Git helpers. They are intentionally
+opt-in so you remain in control, but a single command now orchestrates the routine
+steps:
+
+```bash
+# Fetch from origin, fast-forward main, and (re)create a feature branch
+make git-prepare BRANCH=feature/my-change
+
+# Rebase your branch onto the latest origin/main after reviewers make changes
+make git-sync BRANCH=feature/my-change
+
+# Stage everything (or pass FILES="path1 path2") and commit with a message
+make git-commit MSG="Refine duplicate handling"
+
+# Push the branch and open a PR automatically when the GitHub CLI (gh) is installed
+make git-pr BRANCH=feature/my-change TITLE="Refine duplicate handling" \
+  BODY="## Summary\\n- ...\\n\\n## Testing\\n- pytest"
+```
+
+The Git targets default to `origin`/`main`, but you can override `REMOTE` and
+`MAIN` when needed (for example, `make git-prepare BRANCH=bugfix REMOTE=upstream`).
+When `gh` is not available, `make git-pr` still pushes the branch and prints a
+reminder to open the pull request manually.
+
 ## Graphical interface
 
 Prefer point-and-click? Install the project (editable installs work great) and launch the Tkinter interface:
