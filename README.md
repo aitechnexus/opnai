@@ -64,6 +64,32 @@ To preview what would happen without actually moving files:
 python3 organizer.py ~/Downloads --dry-run
 ```
 
+### Optional: Makefile shortcuts
+
+To avoid retyping the common setup and execution commands, the repository now
+ships with a simple `Makefile`. Run `make` with no arguments to see every
+available shortcut. A few helpful examples:
+
+```bash
+# create .venv/ if it does not exist yet
+make venv
+
+# install the project in editable mode
+make install
+
+# organize a directory; provide the target path via the TARGET variable
+make run TARGET=~/Downloads ARGS=--dry-run
+
+# launch the GUI (accepts optional ARGS like "--plan")
+make gui
+
+# execute the test-suite
+make test
+
+# remove the virtual environment when you are done
+make clean
+```
+
 ## Graphical interface
 
 Prefer point-and-click? Install the project (editable installs work great) and launch the Tkinter interface:
